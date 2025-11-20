@@ -1,4 +1,5 @@
 const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const express = require("express");
 require("dotenv").config();
 
 const ValorantTracker = require("./src/tracker/HenrikTracker");
@@ -36,6 +37,22 @@ class ValorantMatchBot {
 
   async start() {
     try {
+      // Start Express server for Railway
+      const app = express();
+      const PORT = process.env.PORT || 3000;
+      
+      app.get("/", (req, res) => {
+        res.json({ 
+          status: "Bot is running!", 
+          bot: this.client.user?.tag || "Starting...",
+          uptime: process.uptime()
+        });
+      });
+      
+      app.listen(PORT, () => {
+        console.log(`🌐 Health check server running on port ${PORT}`);
+      });
+
       await this.commandHandler.deployCommands(
         process.env.CLIENT_ID,
         process.env.DISCORD_TOKEN
