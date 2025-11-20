@@ -1,0 +1,870 @@
+const { REST, Routes, SlashCommandBuilder } = require("discord.js");
+const axios = require("axios");
+
+class CommandHandler {
+  constructor(valorantTracker) {
+    this.valorantTracker = valorantTracker;
+    this.commands = this.buildCommands();
+  }
+
+  buildCommands() {
+    return [
+      // Link Riot account
+      new SlashCommandBuilder()
+        .setName("link")
+        .setDescription("Link your Riot account to track Valorant matches")
+        .addStringOption((option) =>
+          option
+            .setName("username")
+            .setDescription("Your Valorant username (without #)")
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("tag")
+            .setDescription("Your Valorant tag (numbers after #)")
+            .setRequired(true)
+        )
+        .toJSON(),
+
+      // Get latest match with ALL data
+      new SlashCommandBuilder()
+        .setName("match")
+        .setDescription("Get detailed stats from your latest Valorant match")
+            inline: true,
+          }
+        ],          option
+            .setName("tag")
+            .setDescription("Your Valorant tag (numbers after #)")
+            .setRequired(true)
+        )
+        .toJSON(),
+
+      // Get latest match with ALL data
+      new SlashCommandBuilder()
+        .setName("match")
+        .setDescription("Get detailed stats from your latest Valorant match")
+        .addUserOption((option) =>
+          option
+            .setName("player")
+            .setDescription("Check another player's latest match")
+            .setRequired(false)
+        )
+        .toJSON(),
+
+      // Get comprehensive match overview
+      new SlashCommandBuilder()
+        .setName("overview")
+        .setDescription(
+          "Get a detailed overview of your latest match with all players"
+        )
+        .addUserOption((option) =>
+          option
+            .setName("player")
+            .setDescription("View another player's match overview")
+            .setRequired(false)
+        )
+        .toJSON(),
+
+      // Get round-by-round breakdown
+      new SlashCommandBuilder()
+        .setName("rounds")
+        .setDescription("Get round-by-round breakdown of your latest match")
+        .addUserOption((option) =>
+          option
+            .setName("player")
+            .setDescription("View another player's round data")
+            .setRequired(false)
+        )
+        .toJSON(),
+
+      // Compare with teammates
+      new SlashCommandBuilder()
+        .setName("compare")
+        .setDescription(
+          "Compare your performance with teammates in latest match"
+        )
+        .addUserOption((option) =>
+          option
+            .setName("player")
+            .setDescription("Player to compare")
+            .setRequired(false)
+        )
+        .toJSON(),
+
+      // Server leaderboard
+      new SlashCommandBuilder()
+        .setName("leaderboard")
+        .setDescription(
+          "View server Valorant leaderboard based on recent performance"
+        )
+        .toJSON(),
+
+      // Account info
+      new SlashCommandBuilder()
+        .setName("account")
+        .setDescription("View linked account information")
+        .addUserOption((option) =>
+          option
+            .setName("user")
+            .setDescription("View another user's linked account")
+            .setRequired(false)
+        )
+        .toJSON(),
+
+      // Unlink account
+      new SlashCommandBuilder()
+        .setName("unlink")
+        .setDescription("Unlink your Riot account")
+        .toJSON(),
+
+      // Raw data (for debugging)
+      new SlashCommandBuilder()
+        .setName("raw")
+        .setDescription("Get raw match data (advanced users only)")
+        .addBooleanOption((option) =>
+          option
+            .setName("full")
+            .setDescription("Show complete raw data")
+            .setRequired(false)
+        )
+        .toJSON(),
+
+      // Help command
+      new SlashCommandBuilder()
+        .setName("help")
+        .setDescription("Get help with Valorant tracker commands")
+        .toJSON(),
+
+      // Fun feet command
+      new SlashCommandBuilder()
+        .setName("feet")
+        .setDescription("Analyze leg shots (foot shots) in your latest match")
+        .addUserOption((option) =>
+          option
+            .setName("player")
+            .setDescription("Check another player's leg shot stats")
+            .setRequired(false)
+        )
+        .toJSON(),
+
+      // Secret troll command for minseo
+      new SlashCommandBuilder()
+        .setName("minseo")
+        .setDescription("Check minseo#0913's latest match stats")
+        .toJSON(),
+    ];
+  }
+
+  async handleCommand(interaction) {
+    const { commandName } = interaction;
+
+    try {
+      switch (commandName) {
+        case "link":
+          await this.handleLinkAccount(interaction);
+          break;
+        case "match":
+          await this.handleLatestMatch(interaction);
+          break;
+        case "overview":
+          await this.handleMatchOverview(interaction);
+          break;
+        case "rounds":
+          await this.handleRoundsBreakdown(interaction);
+          break;
+        case "compare":
+          await this.handleCompareStats(interaction);
+          break;
+        case "leaderboard":
+          await this.handleLeaderboard(interaction);
+          break;
+        case "account":
+          await this.handleAccountInfo(interaction);
+          break;
+        case "unlink":
+          await this.handleUnlinkAccount(interaction);
+          break;
+        case "raw":
+          await this.handleRawData(interaction);
+          break;
+        case "help":
+          await this.handleHelp(interaction);
+          break;
+        case "feet":
+          await this.handleFeetCount(interaction);
+          break;
+        case "minseo":
+          await this.handleMinseoTroll(interaction);
+          break;
+        default:
+          await interaction.reply({
+            content: "Unknown command!",
+            ephemeral: true,
+          });
+      }
+    } catch (error) {
+      console.error("Error handling command:", error);
+      const errorMsg = `❌ ${
+        error.message || "An error occurred while processing your command."
+      }`;
+
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({ content: errorMsg, ephemeral: true });
+      } else {
+        await interaction.reply({ content: errorMsg, ephemeral: true });
+      }
+    }
+  }
+
+  async handleLinkAccount(interaction) {
+    const username = interaction.options.getString("username");
+    const tag = interaction.options.getString("tag");
+    const discordId = interaction.user.id;
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+      const accountData = await this.valorantTracker.linkAccount(
+        discordId,
+        username,
+        tag
+      );
+
+      const embed = {
+        title: "✅ Account Linked Successfully!",
+        color: 0x00ff00,
+        fields: [
+          {
+            name: "Riot ID",
+            value: `${accountData.gameName}#${accountData.tagLine}`,
+            inline: true,
+          },
+          {
+            name: "Discord User",
+            value: interaction.user.username,
+            inline: true,
+          },
+          {
+            name: "Linked At",
+            value: new Date().toLocaleString(),
+            inline: true,
+          },
+        ],
+        footer: {
+          text: "You can now use /match to view your latest game stats!",
+        },
+      };
+
+      await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async handleLatestMatch(interaction) {
+    const targetUser =
+      interaction.options.getUser("player") || interaction.user;
+    const discordId = targetUser.id;
+
+    await interaction.deferReply();
+
+    try {
+      const matchData = await this.valorantTracker.getLatestMatchData(
+        discordId
+      );
+      const embed = this.createMatchStatsEmbed(matchData, targetUser);
+
+      await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async handleMatchOverview(interaction) {
+    const targetUser =
+      interaction.options.getUser("player") || interaction.user;
+    const discordId = targetUser.id;
+
+    await interaction.deferReply();
+
+    try {
+      const matchData = await this.valorantTracker.getLatestMatchData(
+        discordId
+      );
+      const embeds = this.createMatchOverviewEmbeds(matchData, targetUser);
+
+      await interaction.editReply({ embeds: embeds });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async handleRoundsBreakdown(interaction) {
+    const targetUser =
+      interaction.options.getUser("player") || interaction.user;
+    const discordId = targetUser.id;
+
+    await interaction.deferReply();
+
+    try {
+      const matchData = await this.valorantTracker.getLatestMatchData(
+        discordId
+      );
+
+      if (!matchData.rounds || matchData.rounds.length === 0) {
+        await interaction.editReply({
+          content: "❌ Round-by-round data not available for this match.",
+        });
+        return;
+      }
+
+      const embed = this.createRoundsEmbed(matchData, targetUser);
+      await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async handleCompareStats(interaction) {
+    await interaction.reply({
+      content: "🚧 Team comparison feature coming soon!",
+      ephemeral: true,
+    });
+  }
+
+  async handleLeaderboard(interaction) {
+    await interaction.reply({
+      content: "🚧 Server leaderboard feature coming soon!",
+      ephemeral: true,
+    });
+  }
+
+  async handleAccountInfo(interaction) {
+    const targetUser = interaction.options.getUser("user") || interaction.user;
+    const discordId = targetUser.id;
+
+    const accountData = this.valorantTracker.getLinkedAccount(discordId);
+
+    if (!accountData) {
+      const msg =
+        targetUser.id === interaction.user.id
+          ? "You don't have a linked account. Use `/link` to connect your Riot account."
+          : `${targetUser.username} doesn't have a linked account.`;
+
+      await interaction.reply({ content: msg, ephemeral: true });
+      return;
+    }
+
+    const embed = {
+      title: "🎮 Linked Account Information",
+      color: 0x0099ff,
+      fields: [
+        {
+          name: "Riot ID",
+          value: `${accountData.gameName}#${accountData.tagLine}`,
+          inline: true,
+        },
+        { name: "Discord User", value: targetUser.username, inline: true },
+        {
+          name: "Linked Since",
+          value: new Date(accountData.linkedAt).toLocaleDateString(),
+          inline: true,
+        },
+      ],
+      thumbnail: { url: targetUser.displayAvatarURL() },
+    };
+
+    await interaction.reply({ embeds: [embed] });
+  }
+
+  async handleUnlinkAccount(interaction) {
+    const discordId = interaction.user.id;
+    const success = await this.valorantTracker.unlinkAccount(discordId);
+
+    if (success) {
+      await interaction.reply({
+        content: "✅ Your account has been unlinked successfully.",
+        ephemeral: true,
+      });
+    } else {
+      await interaction.reply({
+        content: "❌ No linked account found to remove.",
+        ephemeral: true,
+      });
+    }
+  }
+
+  async handleRawData(interaction) {
+    const targetUser =
+      interaction.options.getUser("player") || interaction.user;
+    const showFull = interaction.options.getBoolean("full") || false;
+    const discordId = targetUser.id;
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+      const matchData = await this.valorantTracker.getLatestMatchData(
+        discordId
+      );
+
+      let jsonData;
+      if (showFull) {
+        jsonData = JSON.stringify(matchData.rawData, null, 2);
+      } else {
+        jsonData = JSON.stringify(
+          {
+            matchInfo: matchData.matchInfo,
+            playerStats: matchData.playerStats,
+            calculations: matchData.calculations,
+          },
+          null,
+          2
+        );
+      }
+
+      // Split large data into multiple messages if needed
+      if (jsonData.length > 1900) {
+        jsonData =
+          jsonData.substring(0, 1900) +
+          "...\\n\\n(Truncated - use full:true for complete data)";
+      }
+
+      await interaction.editReply({
+        content: `\`\`\`json\\n${jsonData}\\n\`\`\``,
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async handleHelp(interaction) {
+    const helpEmbed = {
+      title: "🎯 Valorant Match Tracker Commands",
+      description:
+        "Track and analyze your Valorant matches with detailed statistics!",
+      color: 0x0099ff,
+      fields: [
+        {
+          name: "🔗 Account Management",
+          value:
+            "`/link username tag` - Link your Riot account\\n`/account [@user]` - View linked account info\\n`/unlink` - Remove linked account",
+          inline: false,
+        },
+        {
+          name: "📊 Match Statistics",
+          value:
+            "`/match [@player]` - Get latest match stats\\n`/overview [@player]` - Detailed match overview\\n`/rounds [@player]` - Round-by-round breakdown",
+          inline: false,
+        },
+        {
+          name: "🏆 Comparison & Rankings",
+          value:
+            "`/compare [@player]` - Compare performance\\n`/leaderboard` - Server rankings",
+          inline: false,
+        },
+        {
+          name: "🛠️ Advanced",
+          value:
+            "`/raw [full]` - Raw match data for developers\\n`/help` - Show this help message",
+          inline: false,
+        },
+        {
+          name: "🦶 Fun Commands",
+          value: "`/feet [@player]` - Analyze leg shots (foot shots) stats",
+          inline: false,
+        },
+        {
+          name: "📝 Getting Started",
+          value:
+            "1. Use `/link YourUsername YourTag` to connect your Riot account\\n2. Play a Valorant match\\n3. Use `/match` to see your detailed stats!",
+          inline: false,
+        },
+      ],
+      footer: { text: "Requires a valid Riot API key for full functionality" },
+    };
+
+    await interaction.reply({ embeds: [helpEmbed], ephemeral: true });
+  }
+
+  async handleFeetCount(interaction) {
+    await interaction.deferReply();
+
+    try {
+      const targetUser =
+        interaction.options.getUser("player") || interaction.user;
+      const discordId = targetUser.id;
+
+      const matchData = await this.valorantTracker.getLatestMatchData(
+        discordId
+      );
+
+      // Get leg shot statistics
+      const playerStats = matchData.playerStats;
+      const legShots = playerStats.stats.legshots;
+      const totalShots =
+        playerStats.stats.headshots +
+        playerStats.stats.bodyshots +
+        playerStats.stats.legshots;
+
+      // Calculate leg shot percentage
+      const legShotPercentage =
+        totalShots > 0 ? ((legShots / totalShots) * 100).toFixed(1) : "0";
+
+      // Get team leg shots for comparison
+      const teamLegShots = matchData.allPlayers
+        .filter((p) => p.team === playerStats.team)
+        .reduce((sum, p) => sum + (p.stats.legshots || 0), 0);
+
+      // Get enemy leg shots
+      const enemyLegShots = matchData.allPlayers
+        .filter((p) => p.team !== playerStats.team)
+        .reduce((sum, p) => sum + (p.stats.legshots || 0), 0);
+
+      // Fun calculations
+      const legShotsPerKill =
+        playerStats.stats.kills > 0
+          ? (legShots / playerStats.stats.kills).toFixed(2)
+          : "0";
+      const legShotsPerRound =
+        matchData.matchInfo.rounds > 0
+          ? (legShots / matchData.matchInfo.rounds).toFixed(2)
+          : "0";
+
+      const feetEmbed = {
+        title: "🦶 Leg Shot Analysis 🦶",
+        description: `Analyzing **${playerStats.name}#${playerStats.tag}**'s leg shots on **${matchData.matchInfo.map}**`,
+        color: 0xff6b6b, // Red color for leg shots
+        fields: [
+          {
+            name: "🎯 Your Leg Shots",
+            value: `**${legShots}** leg shots`,
+            inline: true,
+          },
+          {
+            name: "📊 Accuracy",
+            value: `**${legShotPercentage}%** of total shots`,
+            inline: true,
+          },
+          {
+            name: "� Total Shots",
+            value: `${totalShots} shots fired`,
+            inline: true,
+          },
+          {
+            name: "📈 Performance Metrics",
+            value: `**Leg Shots per Kill:** ${legShotsPerKill}\\n**Leg Shots per Round:** ${legShotsPerRound}`,
+            inline: false,
+          },
+          {
+            name: "👥 Team Comparison",
+            value: `**Your Team:** ${teamLegShots} total leg shots\\n**Enemy Team:** ${enemyLegShots} total leg shots\\n**Your Contribution:** ${
+              teamLegShots > 0
+                ? ((legShots / teamLegShots) * 100).toFixed(1)
+                : 0
+            }% of team leg shots`,
+            inline: false,
+          },
+          {
+            name: "🏃 Shot Breakdown",
+            value: `🎯 **Headshots:** ${playerStats.stats.headshots}\\n🫁 **Bodyshots:** ${playerStats.stats.bodyshots}\\n🦵 **Legshots:** ${legShots}`,
+            inline: false,
+          },
+        ],
+        footer: {
+          text: `Requested by ${interaction.user.username} • Leg shots are the least damaging but count!`,
+        },
+        timestamp: new Date().toISOString(),
+      };
+
+      await interaction.editReply({ embeds: [feetEmbed] });
+    } catch (error) {
+      console.error("Error in feet command:", error.message);
+      await interaction.editReply({
+        content: `❌ **Error:** ${error.message}\\n\\nMake sure you've linked your account with \`/link\` first!`,
+        ephemeral: true,
+      });
+    }
+  }
+
+  async handleMinseoTroll(interaction) {
+    await interaction.deferReply();
+
+    try {
+      // Secretly fetch TenZ's stats but pretend it's minseo
+      console.log("🎭 Fetching TenZ's stats for minseo troll command...");
+
+      // Try to get TenZ's latest match data
+      const tenzResponse = await axios.get(
+        "https://api.henrikdev.xyz/valorant/v3/matches/na/TenZ/00005",
+        {
+          headers: { Authorization: this.valorantTracker.apiKey },
+          timeout: 15000,
+        }
+      );
+
+      if (tenzResponse.data.status !== 200 || !tenzResponse.data.data.length) {
+        throw new Error("Could not fetch TenZ's data for the troll");
+      }
+
+      const tenzMatch = tenzResponse.data.data[0];
+      const tenzPlayer = tenzMatch.players.all_players.find(
+        (p) =>
+          (p.name.toLowerCase() === "tenz" && p.tag === "00005") ||
+          p.name.toLowerCase().includes("tenz")
+      );
+
+      if (!tenzPlayer) {
+        throw new Error("Could not find TenZ in his match data");
+      }
+
+      // Create fake minseo stats using TenZ's real data
+      const fakeStats = {
+        name: "minseo",
+        tag: "0913",
+        team: tenzPlayer.team,
+        character: tenzPlayer.character,
+        stats: tenzPlayer.stats,
+      };
+
+      const fakeMatchInfo = {
+        map: tenzMatch.metadata.map,
+        gameMode: tenzMatch.metadata.mode,
+        rounds: tenzMatch.metadata.rounds_played,
+        gameStart: tenzMatch.metadata.game_start,
+      };
+
+      // Calculate some stats like the real command would
+      const kd =
+        fakeStats.stats.deaths > 0
+          ? (fakeStats.stats.kills / fakeStats.stats.deaths).toFixed(2)
+          : fakeStats.stats.kills;
+      const kda =
+        fakeStats.stats.deaths > 0
+          ? (
+              (fakeStats.stats.kills + fakeStats.stats.assists) /
+              fakeStats.stats.deaths
+            ).toFixed(2)
+          : fakeStats.stats.kills + fakeStats.stats.assists;
+
+      const totalShots =
+        fakeStats.stats.headshots +
+        fakeStats.stats.bodyshots +
+        fakeStats.stats.legshots;
+      const headshotPercentage =
+        totalShots > 0
+          ? ((fakeStats.stats.headshots / totalShots) * 100).toFixed(1)
+          : "0";
+
+      // Determine match result
+      const playerTeam = fakeStats.team.toLowerCase();
+      const teamData = tenzMatch.teams[playerTeam];
+      const matchResult = teamData?.has_won ? "Victory" : "Defeat";
+      const resultEmoji = matchResult === "Victory" ? "🏆" : "💀";
+      const resultColor = matchResult === "Victory" ? 0x00ff00 : 0xff0000;
+
+      const trollEmbed = {
+        title: `${resultEmoji} ${matchResult} - ${fakeMatchInfo.map}`,
+        description: `**minseo#0913** playing ${fakeStats.character}`,
+        color: resultColor,
+        fields: [
+          {
+            name: "📊 Performance",
+            value: `**K/D/A:** ${fakeStats.stats.kills}/${fakeStats.stats.deaths}/${fakeStats.stats.assists}\\n**KD Ratio:** ${kd}\\n**KDA Ratio:** ${kda}`,
+            inline: true,
+          },
+          {
+            name: "🎯 Statistics",
+            value: `**Score:** ${fakeStats.stats.score}\\n**Headshot %:** ${headshotPercentage}%\\n**Team Rank:** #1 (obviously)`,
+            inline: true,
+          },
+          {
+            name: "⏱️ Match Details",
+            value: `**Map:** ${fakeMatchInfo.map}\\n**Mode:** ${fakeMatchInfo.gameMode}\\n**Rounds:** ${fakeMatchInfo.rounds}\\n**Agent:** ${fakeStats.character}`,
+            inline: true,
+          },
+        ],
+        footer: {
+          text: `Requested by ${interaction.user.username} • minseo's latest competitive match`,
+        },
+        timestamp: new Date(fakeMatchInfo.gameStart * 1000).toISOString(),
+      };
+
+      await interaction.editReply({ embeds: [trollEmbed] });
+    } catch (error) {
+      console.error("Error in minseo troll command:", error.message);
+
+      // Fallback fake data if TenZ lookup fails
+      const fallbackEmbed = {
+        title: "💀 Defeat - Ascent",
+        description: "**minseo#0913** playing Sage",
+        color: 0xff0000,
+        fields: [
+          {
+            name: "📊 Performance",
+            value:
+              "**K/D/A:** 4/23/2\\n**KD Ratio:** 0.17\\n**KDA Ratio:** 0.26",
+            inline: true,
+          },
+          {
+            name: "🎯 Statistics",
+            value: "**Score:** 1247\\n**Headshot %:** 8.3%\\n**Team Rank:** #5",
+            inline: true,
+          },
+          {
+            name: "⏱️ Match Details",
+            value:
+              "**Map:** Ascent\\n**Mode:** Competitive\\n**Rounds:** 24\\n**Agent:** Sage",
+            inline: true,
+          },
+          {
+            name: "🎭 Note",
+            value:
+              "*Couldn't fetch real TenZ data, so here's some fake terrible stats for minseo instead! 😈*",
+            inline: false,
+          },
+        ],
+        footer: {
+          text: `Requested by ${interaction.user.username} • minseo probably bottom fragged 🤡`,
+        },
+        timestamp: new Date().toISOString(),
+      };
+
+      await interaction.editReply({ embeds: [fallbackEmbed] });
+    }
+  }
+
+  // Embed creation methods
+  createMatchStatsEmbed(matchData, user) {
+    const { playerStats, matchInfo, calculations } = matchData;
+
+    const resultColor =
+      calculations.matchResult === "Victory" ? 0x00ff00 : 0xff0000;
+    const resultEmoji = calculations.matchResult === "Victory" ? "🏆" : "💀";
+
+    return {
+      title: `${resultEmoji} ${calculations.matchResult} - ${matchInfo.map}`,
+      description: `**${playerStats.name}#${playerStats.tag}** playing ${playerStats.character}`,
+      color: resultColor,
+      fields: [
+        {
+          name: "📊 Performance",
+          value: `**K/D/A:** ${playerStats.stats.kills}/${playerStats.stats.deaths}/${playerStats.stats.assists}\\n**KD Ratio:** ${calculations.kd}\\n**KDA Ratio:** ${calculations.kda}`,
+          inline: true,
+        },
+        {
+          name: "🎯 Statistics",
+          value: `**Score:** ${playerStats.stats.score}\\n**Kills/Round:** ${calculations.killsPerRound}\\n**Team Rank:** #${calculations.teamRank}`,
+          inline: true,
+        },
+        {
+          name: "⏱️ Match Details",
+          value: `**Duration:** ${calculations.matchDurationMinutes} min\\n**Rounds Played:** ${matchInfo.rounds}\\n**Agent:** ${playerStats.character}`,
+          inline: true,
+        },
+      ],
+      footer: {
+        text: `Match ID: ${matchInfo.matchId.substring(
+          0,
+          8
+        )}... • Use /overview for more details`,
+      },
+      timestamp: new Date(matchInfo.gameStart * 1000).toISOString(), // Convert Unix timestamp to milliseconds
+    };
+  }
+
+  createMatchOverviewEmbeds(matchData, user) {
+    const embeds = [];
+
+    // Main match embed
+    const mainEmbed = this.createMatchStatsEmbed(matchData, user);
+    embeds.push(mainEmbed);
+
+    // Team breakdown embed
+    const { allPlayers, teams } = matchData;
+    const playerTeam = teams.find(
+      (t) => t.teamId === matchData.playerStats.teamId
+    );
+    const enemyTeam = teams.find(
+      (t) => t.teamId !== matchData.playerStats.teamId
+    );
+
+    const teamEmbed = {
+      title: "👥 Team Overview",
+      color: 0x0099ff,
+      fields: [
+        {
+          name: `🟢 Your Team (${playerTeam?.roundsWon || 0} rounds)`,
+          value: allPlayers
+            .filter((p) => p.teamId === matchData.playerStats.teamId)
+            .sort((a, b) => b.stats.kills - a.stats.kills)
+            .map(
+              (p) =>
+                `**${p.agentName}** ${p.gameName}: ${p.stats.kills}/${p.stats.deaths}/${p.stats.assists}`
+            )
+            .join("\\n"),
+          inline: true,
+        },
+        {
+          name: `🔴 Enemy Team (${enemyTeam?.roundsWon || 0} rounds)`,
+          value: allPlayers
+            .filter((p) => p.teamId !== matchData.playerStats.teamId)
+            .sort((a, b) => b.stats.kills - a.stats.kills)
+            .map(
+              (p) =>
+                `**${p.agentName}** ${p.gameName}: ${p.stats.kills}/${p.stats.deaths}/${p.stats.assists}`
+            )
+            .join("\\n"),
+          inline: true,
+        },
+      ],
+    };
+
+    embeds.push(teamEmbed);
+    return embeds;
+  }
+
+  createRoundsEmbed(matchData, user) {
+    const rounds = matchData.rounds.slice(0, 12); // Limit to first 12 rounds to fit in embed
+
+    return {
+      title: "🔄 Round Breakdown",
+      description: `**${matchData.matchInfo.mapName}** - First ${rounds.length} rounds`,
+      color: 0x9932cc,
+      fields: rounds.map((round, index) => ({
+        name: `Round ${round.roundNum}`,
+        value: `Result: ${round.roundResult}\\nWinner: Team ${round.winningTeam}`,
+        inline: true,
+      })),
+      footer: {
+        text: "Round-by-round data may be limited depending on match type",
+      },
+    };
+  }
+
+  async deployCommands() {
+    if (!process.env.DISCORD_TOKEN) {
+      console.error("❌ DISCORD_TOKEN not found in environment variables!");
+      return;
+    }
+
+    const rest = new REST({ version: "10" }).setToken(
+      process.env.DISCORD_TOKEN
+    );
+
+    try {
+      console.log("🔄 Started refreshing Valorant tracker commands.");
+
+      await rest.put(
+        Routes.applicationCommands(process.env.CLIENT_ID || "YOUR_CLIENT_ID"),
+        { body: this.commands }
+      );
+
+      console.log("✅ Successfully reloaded Valorant tracker commands.");
+    } catch (error) {
+      console.error("❌ Error deploying commands:", error);
+    }
+  }
+}
+
+module.exports = CommandHandler;
