@@ -247,7 +247,7 @@ class CommandHandler {
       }
 
       const data = matchData.data;
-      const playerStats = data.stats.find((p) => p.puuid === data.playerPuuid);
+      const playerStats = data.playerStats;
 
       if (!playerStats) {
         await interaction.editReply({
@@ -259,18 +259,18 @@ class CommandHandler {
       // Create comprehensive match embed
       const embed = {
         title: `🎯 Latest Match Stats - ${playerStats.name}#${playerStats.tag}`,
-        description: `**${data.metadata.map}** | ${data.metadata.mode} | ${
-          data.metadata.started_at
-            ? new Date(data.metadata.started_at * 1000).toLocaleString()
-            : "Unknown time"
+        description: `**${data.matchInfo.map}** | ${data.matchInfo.gameMode} | ${
+          data.matchInfo.gameStartPatched || "Unknown time"
         }`,
-        color: playerStats.team === data.teams.red.won ? 0xff6b6b : 0x4dabf7,
+        color: playerStats.team === "Red" && data.teams.red.won ? 0xff6b6b : 
+               playerStats.team === "Blue" && data.teams.blue.won ? 0x4dabf7 : 0x95a5a6,
         fields: [
           {
             name: "🏆 Match Result",
             value: `${
-              playerStats.team === data.teams.red.won ? "Victory" : "Defeat"
-            } (${data.teams.red.rounds_won}-${data.teams.blue.rounds_won})`,
+              (playerStats.team === "Red" && data.teams.red.won) || 
+              (playerStats.team === "Blue" && data.teams.blue.won) ? "Victory" : "Defeat"
+            } (${data.teams.red.rounds_won || 0}-${data.teams.blue.rounds_won || 0})`,
             inline: true,
           },
           {
@@ -289,16 +289,14 @@ class CommandHandler {
             inline: false,
           },
           {
-            name: "🎯 Damage Stats",
-            value: `**Damage Dealt:** ${
-              playerStats.damage_made || 0
-            } | **Damage Received:** ${playerStats.damage_received || 0}`,
+            name: "🎯 Accuracy Stats",
+            value: `**Headshots:** ${playerStats.stats.headshots} | **Bodyshots:** ${playerStats.stats.bodyshots} | **Legshots:** ${playerStats.stats.legshots}`,
             inline: false,
           },
           {
             name: "🎪 Economy",
             value: `**Money Spent:** ${
-              playerStats.economy?.spent?.overall || 0
+              playerStats.economy?.spent_overall || 0
             } | **Loadout Value:** ${
               playerStats.economy?.loadout_value?.overall || 0
             }`,

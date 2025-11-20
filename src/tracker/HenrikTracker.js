@@ -134,16 +134,28 @@ class ValorantTracker {
       // Process and enrich the match data
       const processedData = this.processHenrikMatchData(latestMatch, account);
 
-      return processedData;
+      return {
+        success: true,
+        data: processedData
+      };
     } catch (error) {
       console.error("❌ Error fetching match data:", error.message);
 
       if (error.response?.status === 404) {
-        throw new Error("No recent matches found. Play some Valorant first!");
+        return {
+          success: false,
+          error: "No recent matches found. Play some Valorant first!"
+        };
       } else if (error.response?.status === 429) {
-        throw new Error("Rate limit exceeded. Please try again later.");
+        return {
+          success: false,
+          error: "Rate limit exceeded. Please try again later."
+        };
       }
-      throw new Error(`Error fetching match data: ${error.message}`);
+      return {
+        success: false,
+        error: `Error fetching match data: ${error.message}`
+      };
     }
   }
 
