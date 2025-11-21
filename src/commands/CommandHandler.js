@@ -122,6 +122,54 @@ class CommandHandler {
           "Check minseo's latest match (totally real and not fake)"
         )
         .toJSON(),
+
+      // Rank tracker command
+      new SlashCommandBuilder()
+        .setName("rank")
+        .setDescription("Check current rank, RR, and recent changes")
+        .addUserOption((option) =>
+          option
+            .setName("player")
+            .setDescription("Check a linked Discord user's rank")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("username")
+            .setDescription("Valorant username (without #)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("tag")
+            .setDescription("Valorant tag (numbers after #)")
+            .setRequired(false)
+        )
+        .toJSON(),
+
+      // Streak tracker command
+      new SlashCommandBuilder()
+        .setName("streak")
+        .setDescription("Check win/loss streak from recent matches")
+        .addUserOption((option) =>
+          option
+            .setName("player")
+            .setDescription("Check a linked Discord user's streak")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("username")
+            .setDescription("Valorant username (without #)")
+            .setRequired(false)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("tag")
+            .setDescription("Valorant tag (numbers after #)")
+            .setRequired(false)
+        )
+        .toJSON(),
     ];
   }
 
@@ -159,6 +207,12 @@ class CommandHandler {
           break;
         case "minseo":
           await this.handleMinseo(interaction);
+          break;
+        case "rank":
+          await this.handleRank(interaction);
+          break;
+        case "streak":
+          await this.handleStreak(interaction);
           break;
         default:
           await interaction.reply({
@@ -259,18 +313,26 @@ class CommandHandler {
       // Create comprehensive match embed
       const embed = {
         title: `🎯 Latest Match Stats - ${playerStats.name}#${playerStats.tag}`,
-        description: `**${data.matchInfo.map}** | ${data.matchInfo.gameMode} | ${
-          data.matchInfo.gameStartPatched || "Unknown time"
-        }`,
-        color: playerStats.team === "Red" && data.teams.red.won ? 0xff6b6b : 
-               playerStats.team === "Blue" && data.teams.blue.won ? 0x4dabf7 : 0x95a5a6,
+        description: `**${data.matchInfo.map}** | ${
+          data.matchInfo.gameMode
+        } | ${data.matchInfo.gameStartPatched || "Unknown time"}`,
+        color:
+          playerStats.team === "Red" && data.teams.red.won
+            ? 0xff6b6b
+            : playerStats.team === "Blue" && data.teams.blue.won
+            ? 0x4dabf7
+            : 0x95a5a6,
         fields: [
           {
             name: "🏆 Match Result",
             value: `${
-              (playerStats.team === "Red" && data.teams.red.won) || 
-              (playerStats.team === "Blue" && data.teams.blue.won) ? "Victory" : "Defeat"
-            } (${data.teams.red.rounds_won || 0}-${data.teams.blue.rounds_won || 0})`,
+              (playerStats.team === "Red" && data.teams.red.won) ||
+              (playerStats.team === "Blue" && data.teams.blue.won)
+                ? "Victory"
+                : "Defeat"
+            } (${data.teams.red.rounds_won || 0}-${
+              data.teams.blue.rounds_won || 0
+            })`,
             inline: true,
           },
           {
@@ -784,6 +846,468 @@ class CommandHandler {
       console.error("Minseo command error:", error);
       await interaction.editReply({
         content: "❌ An error occurred while fetching minseo's match data.",
+      });
+    }
+  }
+
+  async handleRank(interaction) {
+    try {
+      const targetPlayer = interaction.options.getUser("player");
+      const inputUsername = interaction.options.getString("username");
+      const inputTag = interaction.options.getString("tag");
+
+      // Defer reply immediately to prevent timeout
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply();
+      }
+
+      let username, tag, playerName;
+
+      // Check if username and tag were provided directly
+      if (inputUsername && inputTag) {
+        username = inputUsername;
+        tag = inputTag;
+        playerName = `${username}#${tag}`;
+      }
+      // Check if username is provided but tag is missing
+      else if (inputUsername && !inputTag) {
+        const errorMsg =
+          "❌ Please provide both username and tag. Use `/rank username:TenZ tag:00005`";
+        if (interaction.deferred) {
+          await interaction.editReply({ content: errorMsg });
+        } else {
+          await interaction.reply({ content: errorMsg, ephemeral: true });
+        }
+        return;
+      }
+      // Check if tag is provided but username is missing
+      else if (!inputUsername && inputTag) {
+        const errorMsg =
+          "❌ Please provide both username and tag. Use `/rank username:TenZ tag:00005`";
+        if (interaction.deferred) {
+          await interaction.editReply({ content: errorMsg });
+        } else {
+          await interaction.reply({ content: errorMsg, ephemeral: true });
+        }
+        return;
+      }
+      // Try to get account from Discord user (linked or self)
+      else {
+        const userId = targetPlayer ? targetPlayer.id : interaction.user.id;
+        const rankData = await this.valorantTracker.getPlayerMMR(userId);
+
+        if (!rankData.success) {
+          const errorMsg = targetPlayer
+            ? `❌ ${targetPlayer.username} hasn't linked their Valorant account or ${rankData.error}`
+            : `❌ You haven't linked your Valorant account or ${rankData.error}. Use \`/link\` to connect your account, or use \`/rank username:YourName tag:1234\` to check any player.`;
+
+          if (interaction.deferred) {
+            await interaction.editReply({ content: errorMsg });
+          } else {
+            await interaction.reply({ content: errorMsg, ephemeral: true });
+          }
+          return;
+        }
+
+        const data = rankData.data;
+
+        // Determine RR change color and emoji
+        let rrChangeText = "";
+        let rrColor = 0x95a5a6; // Gray default
+
+        if (data.lastGameChange > 0) {
+          rrChangeText = `+${data.lastGameChange} RR`;
+          rrColor = 0x27ae60; // Green
+        } else if (data.lastGameChange < 0) {
+          rrChangeText = `${data.lastGameChange} RR`;
+          rrColor = 0xe74c3c; // Red
+        } else {
+          rrChangeText = "No change";
+        }
+
+        // Fun commentary based on rank
+        let commentary = "";
+        const rank = data.currentRank.toLowerCase();
+
+        if (rank.includes("iron")) {
+          commentary = "📉 Still working on the basics, I see...";
+        } else if (rank.includes("bronze")) {
+          commentary = "🥉 At least it's not Iron anymore!";
+        } else if (rank.includes("silver")) {
+          commentary = "🥈 Getting there... slowly.";
+        } else if (rank.includes("gold")) {
+          commentary = "🥇 Solid rank! Now don't throw it away.";
+        } else if (rank.includes("platinum")) {
+          commentary = "💎 Looking good! Keep climbing.";
+        } else if (rank.includes("diamond")) {
+          commentary = "💍 Shiny! You're actually decent.";
+        } else if (rank.includes("immortal")) {
+          commentary = "⚡ Immortal? Touch grass maybe?";
+        } else if (rank.includes("radiant")) {
+          commentary = "🌟 RADIANT?! Go pro already!";
+        }
+
+        const embed = {
+          title: `📊 Rank Tracker - ${data.playerName}`,
+          description: commentary,
+          color: rrColor,
+          fields: [
+            {
+              name: "🏆 Current Rank",
+              value: data.currentRank,
+              inline: true,
+            },
+            {
+              name: "⚡ Ranked Rating",
+              value: `${data.rr}/100 RR`,
+              inline: true,
+            },
+            {
+              name: "📈 Last Game",
+              value: rrChangeText,
+              inline: true,
+            },
+            {
+              name: "🎯 Estimated MMR",
+              value: data.mmr ? `${data.mmr} (calculated)` : "Hidden",
+              inline: false,
+            },
+          ],
+          timestamp: new Date().toISOString(),
+        };
+
+        if (interaction.deferred) {
+          await interaction.editReply({ embeds: [embed] });
+        } else {
+          await interaction.reply({ embeds: [embed] });
+        }
+        return;
+      }
+
+      // If we reach here, we have username and tag, so use Henrik API directly
+      const rankData = await this.valorantTracker.getRankData(username, tag);
+
+      if (!rankData.success) {
+        const errorMsg = `❌ ${rankData.error}`;
+        if (interaction.deferred) {
+          await interaction.editReply({ content: errorMsg });
+        } else {
+          await interaction.reply({ content: errorMsg, ephemeral: true });
+        }
+        return;
+      }
+
+      const { currentRank, currentRR, mmr, mmrChange, rrChange } = rankData;
+
+      // Fun commentary based on rank
+      let commentary = "";
+      const rank = currentRank.toLowerCase();
+
+      if (rank.includes("iron")) {
+        commentary = "📉 Still working on the basics, I see...";
+      } else if (rank.includes("bronze")) {
+        commentary = "🥉 At least it's not Iron anymore!";
+      } else if (rank.includes("silver")) {
+        commentary = "🥈 Getting there... slowly.";
+      } else if (rank.includes("gold")) {
+        commentary = "🥇 Solid rank! Now don't throw it away.";
+      } else if (rank.includes("platinum")) {
+        commentary = "💎 Looking good! Keep climbing.";
+      } else if (rank.includes("diamond")) {
+        commentary = "💍 Shiny! You're actually decent.";
+      } else if (rank.includes("immortal")) {
+        commentary = "⚡ Immortal? Touch grass maybe?";
+      } else if (rank.includes("radiant")) {
+        commentary = "🌟 RADIANT?! Go pro already!";
+      }
+
+      // Determine color based on RR change
+      let rrColor = 0x95a5a6; // Gray default
+      if (rrChange > 0) {
+        rrColor = 0x27ae60; // Green
+      } else if (rrChange < 0) {
+        rrColor = 0xe74c3c; // Red
+      }
+
+      const embed = {
+        title: `📊 Rank Tracker - ${playerName}`,
+        description: commentary,
+        color: rrColor,
+        fields: [
+          {
+            name: "🏆 Current Rank",
+            value: currentRank,
+            inline: true,
+          },
+          {
+            name: "⚡ Ranked Rating",
+            value: `${currentRR}/100 RR`,
+            inline: true,
+          },
+          {
+            name: "📈 Recent Change",
+            value: `${rrChange >= 0 ? "+" : ""}${rrChange} RR`,
+            inline: true,
+          },
+          {
+            name: "🎯 Estimated MMR",
+            value: `${mmr} (calculated)`,
+            inline: false,
+          },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+
+      if (interaction.deferred) {
+        await interaction.editReply({ embeds: [embed] });
+      } else {
+        await interaction.reply({ embeds: [embed] });
+      }
+    } catch (error) {
+      console.error("Error in handleRank:", error);
+
+      try {
+        const errorMsg = "❌ An error occurred while fetching rank data.";
+        if (interaction.deferred) {
+          await interaction.editReply({ content: errorMsg });
+        } else if (!interaction.replied) {
+          await interaction.reply({ content: errorMsg, ephemeral: true });
+        }
+      } catch (interactionError) {
+        console.error("Failed to respond to interaction:", interactionError);
+      }
+    }
+  }
+
+  async handleStreak(interaction) {
+    const targetPlayer = interaction.options.getUser("player");
+    const inputUsername = interaction.options.getString("username");
+    const inputTag = interaction.options.getString("tag");
+
+    await interaction.deferReply();
+
+    try {
+      let username, tag, playerName;
+
+      // Check if username and tag were provided directly
+      if (inputUsername && inputTag) {
+        username = inputUsername;
+        tag = inputTag;
+        playerName = `${username}#${tag}`;
+      }
+      // Check if username is provided but tag is missing
+      else if (inputUsername && !inputTag) {
+        await interaction.editReply({
+          content:
+            "❌ Please provide both username and tag. Use `/streak username:TenZ tag:00005`",
+        });
+        return;
+      }
+      // Check if tag is provided but username is missing
+      else if (!inputUsername && inputTag) {
+        await interaction.editReply({
+          content:
+            "❌ Please provide both username and tag. Use `/streak username:TenZ tag:00005`",
+        });
+        return;
+      }
+      // Try to get account from Discord user (linked or self)
+      else {
+        const userId = targetPlayer ? targetPlayer.id : interaction.user.id;
+        const streakData = await this.valorantTracker.getPlayerStreak(userId);
+
+        if (!streakData.success) {
+          if (targetPlayer) {
+            await interaction.editReply({
+              content: `❌ ${targetPlayer.username} hasn't linked their Valorant account or ${streakData.error}`,
+            });
+          } else {
+            await interaction.editReply({
+              content: `❌ You haven't linked your Valorant account or ${streakData.error}. Use \`/link\` to connect your account, or use \`/streak username:YourName tag:1234\` to check any player.`,
+            });
+          }
+          return;
+        }
+
+        const data = streakData.data;
+
+        // Generate fun commentary based on streak
+        let streakEmoji = "";
+        let commentary = "";
+        let embedColor = 0x95a5a6; // Gray default
+
+        if (data.streakType === "win") {
+          embedColor = 0x27ae60; // Green
+          if (data.currentStreak >= 5) {
+            streakEmoji = "🔥";
+            commentary = `${data.currentStreak} game win streak! You're on fire! 🚀`;
+          } else if (data.currentStreak >= 3) {
+            streakEmoji = "✨";
+            commentary = `${data.currentStreak} wins in a row! Keep it up! 💪`;
+          } else {
+            streakEmoji = "😊";
+            commentary = `${data.currentStreak} win streak! Not bad! 👍`;
+          }
+        } else {
+          embedColor = 0xe74c3c; // Red
+          if (data.currentStreak >= 5) {
+            streakEmoji = "💀";
+            commentary = `${data.currentStreak} game losing streak... Maybe take a break? 😭`;
+          } else if (data.currentStreak >= 3) {
+            streakEmoji = "😬";
+            commentary = `${data.currentStreak} losses in a row. Rough patch! 😰`;
+          } else {
+            streakEmoji = "😔";
+            commentary = `${data.currentStreak} loss streak. It happens! 🤷`;
+          }
+        }
+
+        // Format recent matches
+        const recentMatchesText = data.recentMatches
+          .slice(0, 5)
+          .map((match, index) => {
+            const result = match.won ? "W" : "L";
+            const resultEmoji = match.won ? "✅" : "❌";
+            return `${resultEmoji} **${result}** - ${match.map} (${match.kda}) - ${match.agent}`;
+          })
+          .join("\n");
+
+        const embed = {
+          title: `${streakEmoji} Streak Tracker - ${data.playerName}`,
+          description: commentary,
+          color: embedColor,
+          fields: [
+            {
+              name: "🎯 Current Streak",
+              value: `${data.currentStreak} ${
+                data.streakType === "win" ? "Wins" : "Losses"
+              }`,
+              inline: true,
+            },
+            {
+              name: "📊 Recent Record",
+              value: `${data.recentRecord.wins}W - ${data.recentRecord.losses}L`,
+              inline: true,
+            },
+            {
+              name: "🎮 Win Rate",
+              value: `${Math.round(
+                (data.recentRecord.wins /
+                  (data.recentRecord.wins + data.recentRecord.losses)) *
+                  100
+              )}%`,
+              inline: true,
+            },
+            {
+              name: "📋 Recent Matches",
+              value: recentMatchesText || "No recent matches found",
+              inline: false,
+            },
+          ],
+          timestamp: new Date().toISOString(),
+        };
+
+        await interaction.editReply({
+          embeds: [embed],
+        });
+        return;
+      }
+
+      // If we reach here, we have username and tag, so use Henrik API directly
+      const streakData = await this.valorantTracker.getStreakData(username, tag);
+
+      if (!streakData.success) {
+        await interaction.editReply({
+          content: `❌ ${streakData.error}`,
+        });
+        return;
+      }
+
+      const { currentStreak, streakType, recentRecord, recentMatches } =
+        streakData;
+
+      // Generate fun commentary based on streak
+      let streakEmoji = "";
+      let commentary = "";
+      let embedColor = 0x95a5a6; // Gray default
+
+      if (streakType === "win") {
+        embedColor = 0x27ae60; // Green
+        if (currentStreak >= 5) {
+          streakEmoji = "🔥";
+          commentary = `${currentStreak} game win streak! They're on fire! 🚀`;
+        } else if (currentStreak >= 3) {
+          streakEmoji = "✨";
+          commentary = `${currentStreak} wins in a row! Looking good! 💪`;
+        } else {
+          streakEmoji = "😊";
+          commentary = `${currentStreak} win streak! Not bad! 👍`;
+        }
+      } else {
+        embedColor = 0xe74c3c; // Red
+        if (currentStreak >= 5) {
+          streakEmoji = "💀";
+          commentary = `${currentStreak} game losing streak... Rough times! 😭`;
+        } else if (currentStreak >= 3) {
+          streakEmoji = "😬";
+          commentary = `${currentStreak} losses in a row. Tough patch! 😰`;
+        } else {
+          streakEmoji = "😔";
+          commentary = `${currentStreak} loss streak. It happens! 🤷`;
+        }
+      }
+
+      // Format recent matches
+      const recentMatchesText = recentMatches
+        .slice(0, 5)
+        .map((match) => {
+          const result = match.won ? "W" : "L";
+          const resultEmoji = match.won ? "✅" : "❌";
+          return `${resultEmoji} **${result}** - ${match.map} (${match.kda}) - ${match.agent}`;
+        })
+        .join("\n");
+
+      const embed = {
+        title: `${streakEmoji} Streak Tracker - ${playerName}`,
+        description: commentary,
+        color: embedColor,
+        fields: [
+          {
+            name: "🎯 Current Streak",
+            value: `${currentStreak} ${
+              streakType === "win" ? "Wins" : "Losses"
+            }`,
+            inline: true,
+          },
+          {
+            name: "📊 Recent Record",
+            value: `${recentRecord.wins}W - ${recentRecord.losses}L`,
+            inline: true,
+          },
+          {
+            name: "🎮 Win Rate",
+            value: `${Math.round(
+              (recentRecord.wins / (recentRecord.wins + recentRecord.losses)) *
+                100
+            )}%`,
+            inline: true,
+          },
+          {
+            name: "📋 Recent Matches",
+            value: recentMatchesText || "No recent matches found",
+            inline: false,
+          },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+
+      await interaction.editReply({
+        embeds: [embed],
+      });
+    } catch (error) {
+      console.error("Error in handleStreak:", error);
+      await interaction.editReply({
+        content: "❌ An error occurred while fetching streak data.",
       });
     }
   }

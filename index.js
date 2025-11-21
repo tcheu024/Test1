@@ -1,5 +1,4 @@
 const { Client, GatewayIntentBits, Collection } = require("discord.js");
-const express = require("express");
 require("dotenv").config();
 
 const ValorantTracker = require("./src/tracker/HenrikTracker");
@@ -31,27 +30,30 @@ class ValorantMatchBot {
 
     this.client.on("interactionCreate", async (interaction) => {
       if (!interaction.isChatInputCommand()) return;
-      await this.commandHandler.handleCommand(interaction);
+      try {
+        await this.commandHandler.handleCommand(interaction);
+      } catch (error) {
+        console.error("Error handling interaction:", error);
+
+        // Try to respond to the interaction if possible
+        try {
+          const errorMsg =
+            "❌ An error occurred while processing your command.";
+          if (interaction.deferred || interaction.replied) {
+            await interaction.followUp({ content: errorMsg, ephemeral: true });
+          } else {
+            await interaction.reply({ content: errorMsg, ephemeral: true });
+          }
+        } catch (responseError) {
+          console.error("Failed to send error response:", responseError);
+        }
+      }
     });
   }
 
   async start() {
     try {
-      // Start Express server for Railway
-      const app = express();
-      const PORT = process.env.PORT || 3000;
-      
-      app.get("/", (req, res) => {
-        res.json({ 
-          status: "Bot is running!", 
-          bot: this.client.user?.tag || "Starting...",
-          uptime: process.uptime()
-        });
-      });
-      
-      app.listen(PORT, () => {
-        console.log(`🌐 Health check server running on port ${PORT}`);
-      });
+      console.log("🚀 Starting Valorant Discord Bot...");
 
       await this.commandHandler.deployCommands(
         process.env.CLIENT_ID,
@@ -66,9 +68,31 @@ class ValorantMatchBot {
 }
 
 // Handle graceful shutdown
-process.on("SIGINT", () => {
+const gracefulShutdown = () => {
   console.log("🔄 Bot shutting down gracefully...");
+
+  // Close Discord client
+  if (bot && bot.client) {
+    bot.client.destroy();
+  }
+
   process.exit(0);
+};
+
+process.on("SIGINT", gracefulShutdown);
+process.on("SIGTERM", gracefulShutdown);
+
+// Handle unhandled promise rejections
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  // Don't exit process, just log the error
+});
+
+// Handle uncaught exceptions
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught Exception:", error);
+  // For critical errors, shutdown gracefully
+  gracefulShutdown();
 });
 
 process.on("unhandledRejection", (error) => {
@@ -76,5 +100,5 @@ process.on("unhandledRejection", (error) => {
 });
 
 // Start the bot
-const bot = new ValorantMatchBot();
+let bot = new ValorantMatchBot();
 bot.start();
